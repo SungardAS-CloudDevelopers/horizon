@@ -58,7 +58,14 @@ class GlobalOverview(usage.UsageView):
         data = super(GlobalOverview, self).get_data()
         # Pre-fill project names
         try:
-            projects, has_more = api.keystone.tenant_list(self.request)
+
+            if api.keystone.VERSIONS.active >= 3:
+                domain_id = api.keystone.get_effective_domain_id(self.request)
+                projects, has_more = api.keystone.tenant_list(self.request,
+                                                              domain=domain_id)
+            else:
+                projects, has_more = api.keystone.tenant_list(self.request)
+
         except Exception:
             projects = []
             exceptions.handle(self.request,

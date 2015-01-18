@@ -89,7 +89,14 @@ class CreateNetwork(forms.SelfHandlingForm):
     def __init__(self, request, *args, **kwargs):
         super(CreateNetwork, self).__init__(request, *args, **kwargs)
         tenant_choices = [('', _("Select a project"))]
-        tenants, has_more = api.keystone.tenant_list(request)
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = api.keystone.get_effective_domain_id(request)
+            tenants, has_more = api.keystone.tenant_list(self.request,
+                                                         domain=domain_id)
+        else:
+            tenants, has_more = api.keystone.tenant_list(request)
+
         for tenant in tenants:
             if tenant.enabled:
                 tenant_choices.append((tenant.id, tenant.name))
