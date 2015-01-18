@@ -241,6 +241,16 @@ class UsersTable(tables.DataTable):
                                      defaultfilters.capfirst),
                             empty_value="False")
 
+    if api.keystone.VERSIONS.active <= 3:
+        id = tables.Column('domain_id', verbose_name=_('Domain ID'),
+                           attrs={'data-type': 'uuid'})
+        enabled = tables.Column('enabled', verbose_name=_('Enabled'),
+                                status=True,
+                                status_choices=STATUS_CHOICES,
+                                filters=(defaultfilters.yesno,
+                                         defaultfilters.capfirst),
+                                empty_value="False")
+
     class Meta(object):
         name = "users"
         verbose_name = _("Users")
