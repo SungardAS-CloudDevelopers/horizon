@@ -47,12 +47,13 @@ class IndexView(tables.DataTableView):
 
     def get_data(self):
         users = []
-        domain_context = self.request.session.get('domain_context', None)
+
         if policy.check((("identity", "identity:list_users"),),
                         self.request):
+            domain_id = api.keystone.get_effective_domain_id(self.request)
             try:
                 users = api.keystone.user_list(self.request,
-                                               domain=domain_context)
+                                               domain=domain_id)
             except Exception:
                 exceptions.handle(self.request,
                                   _('Unable to retrieve user list.'))
@@ -103,14 +104,15 @@ class UpdateView(forms.ModalFormView):
 
     def get_initial(self):
         user = self.get_object()
-        domain_id = getattr(user, "domain_id", None)
+        domain_id = ''
         domain_name = ''
         # Retrieve the domain name where the project belong
         if api.keystone.VERSIONS.active >= 3:
             try:
-                domain = api.keystone.domain_get(self.request,
-                                                 domain_id)
-                domain_name = domain.name
+                domain = api.keystone.get_default_domain(self.request)
+                domain_id = domain.get('id')
+                domain_name = domain.get('name')
+
             except Exception:
                 exceptions.handle(self.request,
                                   _('Unable to retrieve project domain.'))
