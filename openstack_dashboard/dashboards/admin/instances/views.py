@@ -76,7 +76,13 @@ class AdminIndexView(tables.DataTableView):
         search_opts = self.get_filters({'marker': marker, 'paginate': True})
         # Gather our tenants to correlate against IDs
         try:
-            tenants, has_more = api.keystone.tenant_list(self.request)
+            if api.keystone.VERSIONS.active >= 3:
+                domain_id = api.keystone.get_effective_domain_id(self.request)
+                tenants, has_more = api.keystone.tenant_list(self.request,
+                                                             domain=domain_id)
+            else:
+                tenants, has_more = api.keystone.tenant_list(self.request)
+
         except Exception:
             tenants = []
             msg = _('Unable to retrieve instance project information.')

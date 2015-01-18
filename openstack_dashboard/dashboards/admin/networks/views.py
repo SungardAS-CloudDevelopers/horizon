@@ -44,7 +44,13 @@ class IndexView(tables.DataTableView):
     @memoized.memoized_method
     def _get_tenant_list(self):
         try:
-            tenants, has_more = api.keystone.tenant_list(self.request)
+            if api.keystone.VERSIONS.active >= 3:
+                domain_id = api.keystone.get_effective_domain_id(self.request)
+                tenants, has_more = api.keystone.tenant_list(self.request,
+                                                             domain=domain_id)
+            else:
+                tenants, has_more = api.keystone.tenant_list(self.request)
+
         except Exception:
             tenants = []
             msg = _("Unable to retrieve information about the "
