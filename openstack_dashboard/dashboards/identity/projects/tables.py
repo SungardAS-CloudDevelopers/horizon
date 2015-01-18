@@ -241,6 +241,17 @@ class TenantsTable(tables.DataTable):
                                 required=False),
                             update_action=UpdateCell)
 
+    if api.keystone.VERSIONS.active <= 3:
+        domain_name = tables.Column(
+            'domain_name', verbose_name=_('Domain Name'))
+        enabled = tables.Column('enabled', verbose_name=_('Enabled'),
+                                status=True,
+                                filters=(filters.yesno, filters.capfirst),
+                                form_field=forms.BooleanField(
+                                    label=_('Enabled'),
+                                    required=False),
+                                update_action=UpdateCell)
+
     class Meta(object):
         name = "tenants"
         verbose_name = _("Projects")
