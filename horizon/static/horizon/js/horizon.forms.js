@@ -113,6 +113,15 @@ horizon.forms = {
     $("input#id_end").mousedown(function(){
       startDate.hide();
     });
+  },
+
+  // switches domain id when domain changes
+  // TODO(esp): $("#id_project") needs to be filtered but we don't have
+  // project domain id
+  toggle_domains: function() {
+    $("#id_domain_name").change(function () {
+      $("#id_domain_id").val($("#id_domain_name").children(":selected").attr("value"));
+    });
   }
 };
 
@@ -185,6 +194,9 @@ horizon.forms.init_examples = function (el) {
 };
 
 horizon.addInitFunction(horizon.forms.init = function () {
+  horizon.forms.toggle_domains();
+  horizon.modals.addModalInitFunction(horizon.forms.toggle_domains);
+
   horizon.forms.prevent_multiple_submission($('body'));
   horizon.modals.addModalInitFunction(horizon.forms.prevent_multiple_submission);
 

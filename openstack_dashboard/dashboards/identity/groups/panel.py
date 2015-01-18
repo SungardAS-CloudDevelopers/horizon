@@ -25,6 +25,14 @@ class Groups(horizon.Panel):
     slug = 'groups'
     policy_rules = (("identity", "identity:list_groups"),)
 
+    def can_access(self, context):
+        if keystone.VERSIONS.active < 3:
+            return super(Groups, self).can_access(context)
+
+        request = context['request']
+        domain_token = request.session.get('domain_token')
+        return super(Groups, self).can_access(context) and domain_token
+
 
 if keystone.VERSIONS.active >= 3:
     dashboard.Identity.register(Groups)

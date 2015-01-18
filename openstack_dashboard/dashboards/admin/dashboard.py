@@ -16,6 +16,8 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
+from openstack_dashboard.api import keystone
+
 
 class SystemPanels(horizon.PanelGroup):
     slug = "admin"
@@ -31,6 +33,16 @@ class Admin(horizon.Dashboard):
     panels = (SystemPanels,)
     default_panel = 'overview'
     permissions = ('openstack.roles.admin',)
+    policy_rules = (("identity", "cloud_admin"),)
+
+    def can_access(self, context):
+        """We only show this for Domain Admin"""
+        if keystone.VERSIONS.active < 3:
+            return super(Admin, self).can_access(context)
+
+        request = context['request']
+        domain_token = request.session.get('domain_token')
+        return super(Admin, self).can_access(context) and domain_token
 
 
 horizon.register(Admin)
