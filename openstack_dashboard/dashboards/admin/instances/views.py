@@ -76,7 +76,8 @@ class AdminIndexView(tables.DataTableView):
         search_opts = self.get_filters({'marker': marker, 'paginate': True})
         # Gather our tenants to correlate against IDs
         try:
-            tenants, has_more = api.keystone.tenant_list(self.request)
+            tenants, has_more = api.keystone.tenant_list_with_domain_check(
+                self.request)
         except Exception:
             tenants = []
             msg = _('Unable to retrieve instance project information.')
@@ -93,10 +94,14 @@ class AdminIndexView(tables.DataTableView):
                 return []
 
         try:
+            all_tenants = True
+            if api.keystone.VERSIONS.active >= 3:
+                all_tenants = api.keystone.is_v3_cloud_admin(self.request)
+
             instances, self._more = api.nova.server_list(
                 self.request,
                 search_opts=search_opts,
-                all_tenants=True)
+                all_tenants=all_tenants)
         except Exception:
             self._more = False
             exceptions.handle(self.request,
@@ -104,7 +109,7 @@ class AdminIndexView(tables.DataTableView):
         if instances:
             try:
                 api.network.servers_update_addresses(self.request, instances,
-                                                     all_tenants=True)
+                                                     all_tenants=all_tenants)
             except Exception:
                 exceptions.handle(
                     self.request,

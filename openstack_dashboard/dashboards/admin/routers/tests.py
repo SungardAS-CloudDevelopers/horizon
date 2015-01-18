@@ -29,16 +29,27 @@ class RouterTests(test.BaseAdminViewTests, r_test.RouterTests):
     DETAIL_PATH = 'horizon:%s:routers:detail' % DASHBOARD
 
     @test.create_stubs({api.neutron: ('router_list', 'network_list'),
-                        api.keystone: ('tenant_list',)})
+                        api.keystone: ('tenant_list',
+                                       'get_effective_domain_id')})
     def test_index(self):
-        tenants = self.tenants.list()
         api.neutron.router_list(
             IsA(http.HttpRequest),
             search_opts=None).AndReturn(self.routers.list())
-        api.keystone.tenant_list(IsA(http.HttpRequest))\
-            .AndReturn([tenants, False])
-        self._mock_external_network_list()
 
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest), domain=domain_id).AndReturn(
+                [self.tenants.list(), False])
+
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([self.tenants.list(), False])
+
+        self._mock_external_network_list()
         self.mox.ReplayAll()
 
         res = self.client.get(self.INDEX_URL)
@@ -62,14 +73,27 @@ class RouterTests(test.BaseAdminViewTests, r_test.RouterTests):
         self.assertMessageCount(res, error=1)
 
     @test.create_stubs({api.neutron: ('router_list', 'network_list'),
-                        api.keystone: ('tenant_list',)})
+                        api.keystone: ('tenant_list',
+                                       'get_effective_domain_id')})
     def test_set_external_network_empty(self):
         router = self.routers.first()
         api.neutron.router_list(
             IsA(http.HttpRequest),
             search_opts=None).AndReturn([router])
-        api.keystone.tenant_list(IsA(http.HttpRequest))\
-            .AndReturn([self.tenants.list(), False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest), domain=domain_id).AndReturn(
+                [self.tenants.list(), False])
+
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([self.tenants.list(), False])
+
         self._mock_external_network_list(alter_ids=True)
         self.mox.ReplayAll()
 
@@ -84,21 +108,44 @@ class RouterTests(test.BaseAdminViewTests, r_test.RouterTests):
 
     @test.create_stubs({api.neutron: ('router_list', 'network_list',
                                       'port_list', 'router_delete',),
-                        api.keystone: ('tenant_list',)})
+                        api.keystone: ('tenant_list',
+                                       'get_effective_domain_id')})
     def test_router_delete(self):
         router = self.routers.first()
         tenants = self.tenants.list()
         api.neutron.router_list(
             IsA(http.HttpRequest),
             search_opts=None).AndReturn(self.routers.list())
-        api.keystone.tenant_list(IsA(http.HttpRequest))\
-            .AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest), domain=domain_id).AndReturn(
+                [self.tenants.list(), False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
+
         self._mock_external_network_list()
         api.neutron.router_list(
             IsA(http.HttpRequest),
             search_opts=None).AndReturn(self.routers.list())
-        api.keystone.tenant_list(IsA(http.HttpRequest))\
-            .AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest), domain=domain_id).AndReturn(
+                [self.tenants.list(), False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
+
         self._mock_external_network_list()
         api.neutron.port_list(IsA(http.HttpRequest),
                               device_id=router.id, device_owner=IgnoreArg())\
@@ -107,8 +154,19 @@ class RouterTests(test.BaseAdminViewTests, r_test.RouterTests):
         api.neutron.router_list(
             IsA(http.HttpRequest),
             search_opts=None).AndReturn(self.routers.list())
-        api.keystone.tenant_list(IsA(http.HttpRequest))\
-            .AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest), domain=domain_id).AndReturn(
+                [self.tenants.list(), False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
+
         self._mock_external_network_list()
         self.mox.ReplayAll()
 
@@ -123,7 +181,8 @@ class RouterTests(test.BaseAdminViewTests, r_test.RouterTests):
     @test.create_stubs({api.neutron: ('router_list', 'network_list',
                                       'port_list', 'router_remove_interface',
                                       'router_delete',),
-                        api.keystone: ('tenant_list',)})
+                        api.keystone: ('tenant_list',
+                                       'get_effective_domain_id')})
     def test_router_with_interface_delete(self):
         router = self.routers.first()
         ports = self.ports.list()
@@ -131,14 +190,36 @@ class RouterTests(test.BaseAdminViewTests, r_test.RouterTests):
         api.neutron.router_list(
             IsA(http.HttpRequest),
             search_opts=None).AndReturn(self.routers.list())
-        api.keystone.tenant_list(IsA(http.HttpRequest))\
-            .AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest), domain=domain_id).AndReturn(
+                [self.tenants.list(), False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
+
         self._mock_external_network_list()
         api.neutron.router_list(
             IsA(http.HttpRequest),
             search_opts=None).AndReturn(self.routers.list())
-        api.keystone.tenant_list(IsA(http.HttpRequest))\
-            .AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest), domain=domain_id).AndReturn(
+                [self.tenants.list(), False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
+
         self._mock_external_network_list()
         api.neutron.port_list(IsA(http.HttpRequest),
                               device_id=router.id, device_owner=IgnoreArg())\
@@ -150,8 +231,18 @@ class RouterTests(test.BaseAdminViewTests, r_test.RouterTests):
         api.neutron.router_list(
             IsA(http.HttpRequest),
             search_opts=None).AndReturn(self.routers.list())
-        api.keystone.tenant_list(IsA(http.HttpRequest))\
-            .AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest), domain=domain_id).AndReturn(
+                [self.tenants.list(), False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
         self._mock_external_network_list()
         self.mox.ReplayAll()
 

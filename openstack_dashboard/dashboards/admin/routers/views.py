@@ -36,6 +36,15 @@ class IndexView(r_views.IndexView, n_views.IndexView):
         try:
             routers = api.neutron.router_list(self.request,
                                               search_opts=search_opts)
+
+            if api.keystone.VERSIONS.active >= 3:
+                # filter if you are not cloud admin
+                cloud_admin = api.keystone.is_v3_cloud_admin(self.request)
+                if not cloud_admin:
+                    tenant_list = self._get_tenant_list()
+                    routers = [r for r in routers
+                               if r.tenant_id in tenant_list.keys()]
+
         except Exception:
             routers = []
             exceptions.handle(self.request,
