@@ -31,7 +31,9 @@ INDEX_URL = reverse('horizon:admin:instances:index')
 class InstanceViewTest(test.BaseAdminViewTests):
     @test.create_stubs({api.nova: ('flavor_list', 'server_list',
                                    'extension_supported',),
-                        api.keystone: ('tenant_list',),
+                        api.keystone: ('tenant_list',
+                                       'get_effective_domain_id',
+                                       'is_v3_cloud_admin'),
                         api.network: ('servers_update_addresses',)})
     def test_index(self):
         servers = self.servers.list()
@@ -39,12 +41,30 @@ class InstanceViewTest(test.BaseAdminViewTests):
         tenants = self.tenants.list()
         api.nova.extension_supported('AdminActions', IsA(http.HttpRequest)) \
             .MultipleTimes().AndReturn(True)
-        api.keystone.tenant_list(IsA(http.HttpRequest)).\
-            AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest),
+                domain=domain_id).AndReturn([tenants, False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
+
         search_opts = {'marker': None, 'paginate': True}
-        api.nova.server_list(IsA(http.HttpRequest),
-                             all_tenants=True, search_opts=search_opts) \
-            .AndReturn([servers, False])
+
+        all_tenants = True
+        api.keystone.is_v3_cloud_admin(IsA(http.HttpRequest)).AndReturn(
+            all_tenants)
+
+        api.nova.server_list(
+            IsA(http.HttpRequest),
+            all_tenants=all_tenants,
+            search_opts=search_opts).AndReturn([servers, False])
+
         api.network.servers_update_addresses(IsA(http.HttpRequest), servers,
                                              all_tenants=True)
         api.nova.flavor_list(IsA(http.HttpRequest)).AndReturn(flavors)
@@ -57,7 +77,9 @@ class InstanceViewTest(test.BaseAdminViewTests):
 
     @test.create_stubs({api.nova: ('flavor_list', 'flavor_get',
                                    'server_list', 'extension_supported',),
-                        api.keystone: ('tenant_list',),
+                        api.keystone: ('tenant_list',
+                                       'is_v3_cloud_admin',
+                                       'get_effective_domain_id'),
                         api.network: ('servers_update_addresses',)})
     def test_index_flavor_list_exception(self):
         servers = self.servers.list()
@@ -66,17 +88,35 @@ class InstanceViewTest(test.BaseAdminViewTests):
         full_flavors = SortedDict([(f.id, f) for f in flavors])
 
         search_opts = {'marker': None, 'paginate': True}
-        api.nova.server_list(IsA(http.HttpRequest),
-                             all_tenants=True, search_opts=search_opts) \
-            .AndReturn([servers, False])
+
+        all_tenants = True
+        api.keystone.is_v3_cloud_admin(IsA(http.HttpRequest)).AndReturn(
+            all_tenants)
+
+        api.nova.server_list(
+            IsA(http.HttpRequest),
+            all_tenants=all_tenants,
+            search_opts=search_opts).AndReturn([servers, False])
+
         api.network.servers_update_addresses(IsA(http.HttpRequest), servers,
                                              all_tenants=True)
         api.nova.extension_supported('AdminActions', IsA(http.HttpRequest)) \
             .MultipleTimes().AndReturn(True)
         api.nova.flavor_list(IsA(http.HttpRequest)). \
             AndRaise(self.exceptions.nova)
-        api.keystone.tenant_list(IsA(http.HttpRequest)).\
-            AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest),
+                domain=domain_id).AndReturn([tenants, False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
+
         for server in servers:
             api.nova.flavor_get(IsA(http.HttpRequest), server.flavor["id"]). \
                 AndReturn(full_flavors[server.flavor["id"]])
@@ -90,7 +130,9 @@ class InstanceViewTest(test.BaseAdminViewTests):
 
     @test.create_stubs({api.nova: ('flavor_list', 'flavor_get',
                                    'server_list', 'extension_supported', ),
-                        api.keystone: ('tenant_list',),
+                        api.keystone: ('tenant_list',
+                                       'get_effective_domain_id',
+                                       'is_v3_cloud_admin'),
                         api.network: ('servers_update_addresses',)})
     def test_index_flavor_get_exception(self):
         servers = self.servers.list()
@@ -102,17 +144,35 @@ class InstanceViewTest(test.BaseAdminViewTests):
             server.flavor['id'] = str(uuid.UUID(int=i))
 
         search_opts = {'marker': None, 'paginate': True}
-        api.nova.server_list(IsA(http.HttpRequest),
-                             all_tenants=True, search_opts=search_opts) \
-            .AndReturn([servers, False])
+
+        all_tenants = True
+        api.keystone.is_v3_cloud_admin(IsA(http.HttpRequest)).AndReturn(
+            all_tenants)
+
+        api.nova.server_list(
+            IsA(http.HttpRequest),
+            all_tenants=all_tenants,
+            search_opts=search_opts).AndReturn([servers, False])
+
         api.network.servers_update_addresses(IsA(http.HttpRequest), servers,
                                              all_tenants=True)
         api.nova.extension_supported('AdminActions', IsA(http.HttpRequest)) \
             .MultipleTimes().AndReturn(True)
         api.nova.flavor_list(IsA(http.HttpRequest)). \
             AndReturn(flavors)
-        api.keystone.tenant_list(IsA(http.HttpRequest)).\
-            AndReturn([tenants, False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest),
+                domain=domain_id).AndReturn([tenants, False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([tenants, False])
+
         for server in servers:
             api.nova.flavor_get(IsA(http.HttpRequest), server.flavor["id"]). \
                 AndRaise(self.exceptions.nova)
@@ -127,12 +187,24 @@ class InstanceViewTest(test.BaseAdminViewTests):
         self.assertMessageCount(res, error=1)
         self.assertItemsEqual(instances, servers)
 
-    @test.create_stubs({api.nova: ('server_list',)})
+    @test.create_stubs({api.nova: ('server_list',),
+                        api.keystone: ('is_v3_cloud_admin',
+                                       'tenant_list_with_domain_check')})
     def test_index_server_list_exception(self):
+        tenants = self.tenants.list()
         search_opts = {'marker': None, 'paginate': True}
+
+        api.keystone.tenant_list_with_domain_check(
+            IsA(http.HttpRequest)).AndReturn([tenants, False])
+
+        all_tenants = True
+        api.keystone.is_v3_cloud_admin(IsA(http.HttpRequest)).AndReturn(
+            all_tenants)
+
         api.nova.server_list(IsA(http.HttpRequest),
-                             all_tenants=True, search_opts=search_opts) \
-            .AndRaise(self.exceptions.nova)
+                             all_tenants=all_tenants,
+                             search_opts=search_opts).AndRaise(
+            self.exceptions.nova)
 
         self.mox.ReplayAll()
 
@@ -177,16 +249,36 @@ class InstanceViewTest(test.BaseAdminViewTests):
 
     @test.create_stubs({api.nova: ('flavor_list', 'server_list',
                                    'extension_supported', ),
-                        api.keystone: ('tenant_list',),
+                        api.keystone: ('tenant_list',
+                                       'get_effective_domain_id',
+                                       'is_v3_cloud_admin'),
                         api.network: ('servers_update_addresses',)})
     def test_index_options_before_migrate(self):
         servers = self.servers.list()
-        api.keystone.tenant_list(IsA(http.HttpRequest)).\
-            AndReturn([self.tenants.list(), False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest),
+                domain=domain_id).AndReturn([self.tenants.list(), False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([self.tenants.list(), False])
+
         search_opts = {'marker': None, 'paginate': True}
-        api.nova.server_list(IsA(http.HttpRequest),
-                             all_tenants=True, search_opts=search_opts) \
-            .AndReturn([servers, False])
+
+        all_tenants = True
+        api.keystone.is_v3_cloud_admin(IsA(http.HttpRequest)).AndReturn(
+            all_tenants)
+
+        api.nova.server_list(
+            IsA(http.HttpRequest),
+            all_tenants=all_tenants,
+            search_opts=search_opts).AndReturn([servers, False])
+
         api.network.servers_update_addresses(IsA(http.HttpRequest), servers,
                                              all_tenants=True)
         api.nova.extension_supported('AdminActions', IsA(http.HttpRequest)) \
@@ -202,7 +294,9 @@ class InstanceViewTest(test.BaseAdminViewTests):
 
     @test.create_stubs({api.nova: ('flavor_list', 'server_list',
                                    'extension_supported', ),
-                        api.keystone: ('tenant_list',),
+                        api.keystone: ('tenant_list',
+                                       'get_effective_domain_id',
+                                       'is_v3_cloud_admin'),
                         api.network: ('servers_update_addresses',)})
     def test_index_options_after_migrate(self):
         servers = self.servers.list()
@@ -210,14 +304,32 @@ class InstanceViewTest(test.BaseAdminViewTests):
         server1.status = "VERIFY_RESIZE"
         server2 = servers[2]
         server2.status = "VERIFY_RESIZE"
-        api.keystone.tenant_list(IsA(http.HttpRequest)) \
-            .AndReturn([self.tenants.list(), False])
+
+        if api.keystone.VERSIONS.active >= 3:
+            domain_id = 1
+            api.keystone.get_effective_domain_id(
+                IsA(http.HttpRequest)).AndReturn(domain_id)
+
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest),
+                domain=domain_id).AndReturn([self.tenants.list(), False])
+        else:
+            api.keystone.tenant_list(
+                IsA(http.HttpRequest)).AndReturn([self.tenants.list(), False])
+
         search_opts = {'marker': None, 'paginate': True}
         api.nova.extension_supported('AdminActions', IsA(http.HttpRequest)) \
             .MultipleTimes().AndReturn(True)
-        api.nova.server_list(IsA(http.HttpRequest),
-                             all_tenants=True, search_opts=search_opts) \
-            .AndReturn([servers, False])
+
+        all_tenants = True
+        api.keystone.is_v3_cloud_admin(IsA(http.HttpRequest)).AndReturn(
+            all_tenants)
+
+        api.nova.server_list(
+            IsA(http.HttpRequest),
+            all_tenants=True,
+            search_opts=search_opts).AndReturn([servers, False])
+
         api.network.servers_update_addresses(IsA(http.HttpRequest), servers,
                                              all_tenants=True)
         api.nova.flavor_list(IsA(http.HttpRequest)).\
