@@ -16,6 +16,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 
 from django.conf import settings
 from django.core.urlresolvers import reverse
@@ -35,6 +36,9 @@ from openstack_dashboard.api import cinder
 from openstack_dashboard.api import keystone
 from openstack_dashboard.api import nova
 from openstack_dashboard.usage import quotas
+
+LOG = logging.getLogger(__name__)
+
 
 INDEX_URL = "horizon:identity:projects:index"
 ADD_USER_URL = "horizon:identity:projects:create_user"
@@ -188,13 +192,18 @@ class UpdateProjectMembersAction(workflows.MembershipAction):
         err_msg = _('Unable to retrieve user list. Please try again later.')
         # Use the domain_id from the project
         domain_id = self.initial.get("domain_id", None)
+
+        # Cloud Admin
+        if domain_id == keystone.DEFAULT_DOMAIN:
+            domain_id = None
+
         project_id = ''
         if 'project_id' in self.initial:
             project_id = self.initial['project_id']
 
         # Get the default role
         try:
-            default_role = api.keystone.get_default_role(self.request)
+            default_role = keystone.get_default_role(self.request)
             # Default role is necessary to add members to a project
             if default_role is None:
                 default = getattr(settings,
@@ -270,6 +279,7 @@ class UpdateProjectMembers(workflows.UpdateMembersStep):
             except Exception:
                 exceptions.handle(self.workflow.request,
                                   _('Unable to retrieve user list.'))
+                # FIXME(woodm1979): Need to set value of roles or redirect
 
             post = self.workflow.request.POST
             for role in roles:
@@ -368,6 +378,7 @@ class UpdateProjectGroups(workflows.UpdateMembersStep):
             except Exception:
                 exceptions.handle(self.workflow.request,
                                   _('Unable to retrieve role list.'))
+                # FIXME(woodm1979): Need to set value of roles or redirect
 
             post = self.workflow.request.POST
             for role in roles:
@@ -383,17 +394,17 @@ class CreateProject(workflows.Workflow):
     success_message = _('Created new project "%s".')
     failure_message = _('Unable to create project "%s".')
     success_url = "horizon:identity:projects:index"
-    default_steps = (CreateProjectInfo,
-                     UpdateProjectMembers,
-                     CreateProjectQuota)
 
     def __init__(self, request=None, context_seed=None, entry_point=None,
                  *args, **kwargs):
-        if PROJECT_GROUP_ENABLED:
-            self.default_steps = (CreateProjectInfo,
-                                  UpdateProjectMembers,
-                                  UpdateProjectGroups,
-                                  CreateProjectQuota)
+        self.default_steps = [CreateProjectInfo, UpdateProjectMembers]
+        if PROJECT_GROUP_ENABLED and not keystone.is_cloud_admin(request):
+            self.default_steps.append(UpdateProjectGroups)
+        elif PROJECT_GROUP_ENABLED:
+            self.default_steps.append(UpdateProjectGroups)
+            self.default_steps.append(CreateProjectQuota)
+        else:
+            self.default_steps.append(CreateProjectQuota)
         super(CreateProject, self).__init__(request=request,
                                             context_seed=context_seed,
                                             entry_point=entry_point,
@@ -519,7 +530,8 @@ class CreateProject(workflows.Workflow):
         self._update_project_members(request, data, project_id)
         if PROJECT_GROUP_ENABLED:
             self._update_project_groups(request, data, project_id)
-        self._update_project_quota(request, data, project_id)
+        if keystone.is_cloud_admin(request):
+            self._update_project_quota(request, data, project_id)
         return True
 
 
@@ -596,7 +608,10 @@ class UpdateProject(workflows.Workflow):
         return api.keystone.role_list(request)
 
     def _update_project(self, request, data):
-        # update project info
+        """Update project info"""
+
+        domain_id = api.keystone.get_effective_domain_id(self.request)
+
         try:
             project_id = data['project_id']
             return api.keystone.tenant_update(
@@ -604,8 +619,10 @@ class UpdateProject(workflows.Workflow):
                 project_id,
                 name=data['name'],
                 description=data['description'],
-                enabled=data['enabled'])
-        except Exception:
+                enabled=data['enabled'],
+                domain=domain_id)
+        except Exception as e:
+            LOG.debug('Project update failed: %s' % e)
             exceptions.handle(request, ignore=True)
             return
 
@@ -621,7 +638,7 @@ class UpdateProject(workflows.Workflow):
                 # Add it if necessary
                 if role.id not in current_role_ids:
                     # user role has changed
-                    api.keystone.add_tenant_user_role(
+                    keystone.add_tenant_user_role(
                         request,
                         project=project_id,
                         user=user_id,
@@ -636,7 +653,7 @@ class UpdateProject(workflows.Workflow):
     def _remove_roles_from_user(self, request, project_id, user_id,
                                 current_role_ids):
         for id_to_delete in current_role_ids:
-            api.keystone.remove_tenant_user_role(
+            keystone.remove_tenant_user_role(
                 request,
                 project=project_id,
                 user=user_id,
@@ -678,6 +695,10 @@ class UpdateProject(workflows.Workflow):
             available_roles = self._get_available_roles(request)
             # Get the users currently associated with this project so we
             # can diff against it.
+
+            # bpokorny: For this to work for a domain admin, we need
+            # a fix in keystone to allow listing user roles based on having
+            # just a role on the domain.
             users_roles = api.keystone.get_project_users_roles(
                 request, project=project_id)
             users_to_modify = len(users_roles)
