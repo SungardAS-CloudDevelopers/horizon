@@ -39,6 +39,7 @@ from openstack_dashboard import policy
 
 LOG = logging.getLogger(__name__)
 DEFAULT_ROLE = None
+DEFAULT_DOMAIN = getattr(settings, 'OPENSTACK_KEYSTONE_DEFAULT_DOMAIN', None)
 
 
 # Set up our data structure for managing Identity API versions, and
@@ -120,7 +121,7 @@ def _get_endpoint_url(request, endpoint_type, catalog=None):
     return url
 
 
-def keystoneclient(request, admin=False):
+def keystoneclient(request, admin=False, use_project_token=False):
     """Returns a client connected to the Keystone backend.
 
     Several forms of authentication are supported:
@@ -142,7 +143,15 @@ def keystoneclient(request, admin=False):
     The client is cached so that subsequent API calls during the same
     request/response cycle don't have to be re-authenticated.
     """
+    api_version = VERSIONS.get_active_version()
     user = request.user
+    token_id = user.token.id
+
+    if api_version >= 3 and not use_project_token:
+        domain_token = request.session.get('domain_token')
+        if domain_token:
+            token_id = getattr(domain_token, 'auth_token', None)
+
     if admin:
         if not policy.check((("identity", "admin_required"),), request):
             raise exceptions.NotAuthorized
@@ -152,15 +161,13 @@ def keystoneclient(request, admin=False):
                                 'OPENSTACK_ENDPOINT_TYPE',
                                 'internalURL')
 
-    api_version = VERSIONS.get_active_version()
-
     # Take care of client connection caching/fetching a new client.
     # Admin vs. non-admin clients are cached separately for token matching.
     cache_attr = "_keystoneclient_admin" if admin \
         else backend.KEYSTONE_CLIENT_ATTR
     if (hasattr(request, cache_attr) and
-        (not user.token.id or
-         getattr(request, cache_attr).auth_token == user.token.id)):
+        (not token_id or
+         getattr(request, cache_attr).auth_token == token_id)):
         conn = getattr(request, cache_attr)
     else:
         endpoint = _get_endpoint_url(request, endpoint_type)
@@ -168,14 +175,13 @@ def keystoneclient(request, admin=False):
         cacert = getattr(settings, 'OPENSTACK_SSL_CACERT', None)
         LOG.debug("Creating a new keystoneclient connection to %s." % endpoint)
         remote_addr = request.environ.get('REMOTE_ADDR', '')
-        conn = api_version['client'].Client(token=user.token.id,
+        conn = api_version['client'].Client(token=token_id,
                                             endpoint=endpoint,
                                             original_ip=remote_addr,
                                             insecure=insecure,
                                             cacert=cacert,
                                             auth_url=endpoint,
                                             debug=settings.DEBUG)
-        setattr(request, cache_attr, conn)
     return conn
 
 
@@ -204,7 +210,13 @@ def domain_list(request):
 def domain_update(request, domain_id, name=None, description=None,
                   enabled=None):
     manager = keystoneclient(request, admin=True).domains
-    return manager.update(domain_id, name, description, enabled)
+    try:
+        response = manager.update(domain_id, name=name,
+                                  description=description, enabled=enabled)
+    except Exception as e:
+        LOG.exception("Unable to update Domain: %s" % domain_id)
+        raise e
+    return response
 
 
 def tenant_create(request, name, description=None, enabled=None,
@@ -226,18 +238,39 @@ def get_default_domain(request):
     """
     domain_id = request.session.get("domain_context", None)
     domain_name = request.session.get("domain_context_name", None)
+
     # if running in Keystone V3 or later
-    if VERSIONS.active >= 3 and not domain_id:
+    if VERSIONS.active >= 3 and domain_id is None:
         # if no domain context set, default to users' domain
         domain_id = request.user.user_domain_id
+        domain_name = request.user.user_domain_name
         try:
             domain = domain_get(request, domain_id)
             domain_name = domain.name
+
         except Exception:
             LOG.warning("Unable to retrieve Domain: %s" % domain_id)
+
     domain = base.APIDictWrapper({"id": domain_id,
                                   "name": domain_name})
     return domain
+
+
+def get_effective_domain_id(request):
+    """Gets the id of the default domain to use when creating Identity objects.
+    If the requests default domain is the same as DEFAULT_DOMAIN, return None.
+
+    Many keystone calls need this type of behavior to deal with hierarchical
+    domain structures.
+    """
+
+    # TODO(woodm1979): This assumes there's one-level of sub-domains with a
+    # single super-domain to rule them all.  A different solution will be
+    # needed once the whole hierarchical domains + hierarchical projects
+    # picture shakes out.
+
+    domain_id = get_default_domain(request).get('id')
+    return None if domain_id == DEFAULT_DOMAIN else domain_id
 
 
 # TODO(gabriel): Is there ever a valid case for admin to be false here?
@@ -254,6 +287,16 @@ def tenant_delete(request, project):
     return manager.delete(project)
 
 
+def tenant_list_with_domain_check(request):
+    """This method checks for domain support before listing tenants"""
+    if VERSIONS.active >= 3:
+        domain_id = get_effective_domain_id(request)
+        return tenant_list(request, domain=domain_id)
+    else:
+        return tenant_list(request)
+
+
+# NOTE(esp): domain is really domain_id
 def tenant_list(request, paginate=False, marker=None, domain=None, user=None,
                 admin=True, filters=None):
     manager = VERSIONS.get_project_manager(request, admin=admin)
@@ -264,11 +307,14 @@ def tenant_list(request, paginate=False, marker=None, domain=None, user=None,
         limit = page_size + 1
 
     has_more_data = False
+
+    # V2 API
     if VERSIONS.active < 3:
         tenants = manager.list(limit, marker)
         if paginate and len(tenants) > page_size:
             tenants.pop(-1)
             has_more_data = True
+    # V3 API
     else:
         kwargs = {
             "domain": domain,
@@ -277,7 +323,8 @@ def tenant_list(request, paginate=False, marker=None, domain=None, user=None,
         if filters is not None:
             kwargs.update(filters)
         tenants = manager.list(**kwargs)
-    return (tenants, has_more_data)
+
+    return tenants, has_more_data
 
 
 def tenant_update(request, project, name=None, description=None,
@@ -286,8 +333,9 @@ def tenant_update(request, project, name=None, description=None,
     if VERSIONS.active < 3:
         return manager.update(project, name, description, enabled, **kwargs)
     else:
-        return manager.update(project, name=name, description=description,
-                              enabled=enabled, domain=domain, **kwargs)
+        return manager.update(project, name=name, domain=domain,
+                              description=description,
+                              enabled=enabled, **kwargs)
 
 
 def user_list(request, project=None, domain=None, group=None, filters=None):
@@ -512,7 +560,29 @@ def role_assignments_list(request, project=None, user=None, role=None,
     if VERSIONS.active < 3:
         raise exceptions.NotAvailable
 
-    manager = keystoneclient(request, admin=True).role_assignments
+    # Only use project token if Domain Admin or using a Domain Context.
+    # Cloud Admin in the default Domain will pass domain
+    # and use domain scoped token.
+    default_domain = get_default_domain(request)
+    domain_id = default_domain.get('id')
+
+    use_ptoken = False
+    if domain_id != DEFAULT_DOMAIN and domain is None:
+        use_ptoken = True
+
+    multidomain_support = getattr(settings,
+                                  'OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT',
+                                  False)
+
+    # This means Horizon is set to use keystone v3 in a
+    # single default domain but you are still Cloud Admin
+    # The v3 policy file requires a domain scoped token
+    if multidomain_support is False:
+        use_ptoken = False
+
+    manager = keystoneclient(
+        request, admin=True, use_project_token=use_ptoken).role_assignments
+
     return manager.list(project=project, user=user, role=role, group=group,
                         domain=domain, effective=effective)
 

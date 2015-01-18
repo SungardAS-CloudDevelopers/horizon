@@ -36,6 +36,7 @@ class IndexView(r_views.IndexView, n_views.IndexView):
         try:
             routers = api.neutron.router_list(self.request,
                                               search_opts=search_opts)
+
         except Exception:
             routers = []
             exceptions.handle(self.request,

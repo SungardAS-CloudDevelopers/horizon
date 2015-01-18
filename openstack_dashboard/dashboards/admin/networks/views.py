@@ -44,7 +44,8 @@ class IndexView(tables.DataTableView):
     @memoized.memoized_method
     def _get_tenant_list(self):
         try:
-            tenants, has_more = api.keystone.tenant_list(self.request)
+            tenants, has_more = api.keystone.tenant_list_with_domain_check(
+                self.request)
         except Exception:
             tenants = []
             msg = _("Unable to retrieve information about the "
@@ -73,6 +74,7 @@ class IndexView(tables.DataTableView):
     def get_data(self):
         try:
             networks = api.neutron.network_list(self.request)
+
         except Exception:
             networks = []
             msg = _('Network list can not be retrieved.')
